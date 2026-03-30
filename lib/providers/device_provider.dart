@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/constants.dart';
@@ -6,6 +7,74 @@ import '../core/firebase_paths.dart';
 import '../models/device_info_model.dart';
 import '../models/ewma_model.dart';
 import '../models/neutral_data_model.dart';
+
+/// Provider for raw ADS1115 readings from Firebase
+/// A1 (current1) = Living Room Live
+/// A2 (current2) = Kitchen Live  
+/// A3 (current3) = Living Room Neutral
+final adsReadingsProvider = StreamProvider<Map<String, dynamic>>((ref) {
+  const deviceId = AppConstants.deviceId;
+  final path = FirebasePaths.live(deviceId);
+  
+  return FirebaseDatabase.instance
+      .ref(path)
+      .onValue
+      .map((event) {
+    if (event.snapshot.value != null) {
+      return Map<String, dynamic>.from(event.snapshot.value as Map);
+    }
+    return {};
+  });
+});
+
+/// Provider specifically for neutral/leakage monitoring
+/// Calculates leakage as abs(A1 - A3) * 1000 (in mA)
+final leakageDataProvider = StreamProvider<LeakageData>((ref) {
+  final readingsAsync = ref.watch(adsReadingsProvider);
+  
+  return readingsAsync.when(
+    data: (readings) {
+      final a1 = (readings['current1'] as num?)?.toDouble() ?? 0.0; // Living Room Live
+      final a3 = (readings['current3'] as num?)?.toDouble() ?? 0.0; // Living Room Neutral
+      
+      // Calculate leakage in mA
+      final leakageMa = ((a1 - a3).abs() * 1000);
+      
+      return Stream.value(LeakageData(
+        liveCurrentA: a1,
+        neutralCurrentA: a3,
+        leakageMa: leakageMa,
+        timestamp: DateTime.now(),
+      ));
+    },
+    loading: () => Stream.value(LeakageData()),
+    error: (_, __) => Stream.value(LeakageData()),
+  );
+});
+
+class LeakageData {
+  final double liveCurrentA;
+  final double neutralCurrentA;
+  final double leakageMa;
+  final DateTime timestamp;
+
+  LeakageData({
+    this.liveCurrentA = 0,
+    this.neutralCurrentA = 0,
+    this.leakageMa = 0,
+    required this.timestamp,
+  });
+
+  // Color based on leakage threshold
+  Color get statusColor {
+    if (leakageMa < 20) return const Color(0xFF4CAF50); // Green
+    if (leakageMa <= 30) return const Color(0xFFFF9800); // Orange
+    return const Color(0xFFF44336); // Red
+  }
+
+  bool get isWarning => leakageMa >= 20;
+  bool get isDanger => leakageMa > 30;
+}
 
 // Device Info Provider
 final deviceInfoProvider = StreamProvider<DeviceInfo>((ref) {

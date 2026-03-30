@@ -7,7 +7,6 @@ import '../screens/dashboard_screen.dart';
 import '../screens/fault_detail_screen.dart';
 import '../screens/history_screen.dart';
 import '../screens/alerts_screen.dart';
-import '../screens/circuit_control_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/device_network_screen.dart';
 import '../screens/ewma_coach_screen.dart';
