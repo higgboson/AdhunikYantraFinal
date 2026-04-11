@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../core/theme.dart';
+import '../core/offline_cache.dart';
 import '../models/circuit_model.dart';
 import '../models/fault_model.dart';
 import '../providers/fault_provider.dart';
+import '../providers/connectivity_provider.dart';
+import '../widgets/offline_banner.dart';
 
 class AlertsCentreScreen extends ConsumerStatefulWidget {
   const AlertsCentreScreen({super.key});
@@ -19,6 +22,7 @@ class _AlertsCentreScreenState extends ConsumerState<AlertsCentreScreen> {
   @override
   Widget build(BuildContext context) {
     final faultsAsync = ref.watch(allFaultsProvider);
+    final isOffline = ref.watch(isOfflineProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -33,37 +37,73 @@ class _AlertsCentreScreenState extends ConsumerState<AlertsCentreScreen> {
       ),
       body: Column(
         children: [
+          // Offline Banner
+          OfflineBanner(isOffline: isOffline),
+          
           // Filter tabs
           _buildFilterTabs(),
           
           // Alerts list
           Expanded(
-            child: faultsAsync.when(
-              data: (faults) {
-                final filteredAlerts = _getFilteredAlerts(faults);
-                
-                if (filteredAlerts.isEmpty) {
-                  return _buildEmptyState();
-                }
-                
-                return ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: filteredAlerts.length,
-                  itemBuilder: (context, index) {
-                    return _buildAlertCard(filteredAlerts[index]);
-                  },
-                );
-              },
-              loading: () => const Center(
-                child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
-                ),
-              ),
-              error: (error, _) => _buildError(error.toString()),
-            ),
+            child: isOffline
+                ? _buildOfflineAlertsList()
+                : faultsAsync.when(
+                    data: (faults) {
+                      final filteredAlerts = _getFilteredAlerts(faults);
+                      
+                      if (filteredAlerts.isEmpty) {
+                        return _buildEmptyState();
+                      }
+                      
+                      return ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: filteredAlerts.length,
+                        itemBuilder: (context, index) {
+                          return _buildAlertCard(filteredAlerts[index]);
+                        },
+                      );
+                    },
+                    loading: () => const Center(
+                      child: CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                      ),
+                    ),
+                    error: (error, _) => _buildError(error.toString()),
+                  ),
           ),
         ],
       ),
+    );
+  }
+
+  /// Build alerts list from cache when offline
+  Widget _buildOfflineAlertsList() {
+    final cachedFaults = OfflineCache.getFaultHistory();
+    
+    if (cachedFaults.isEmpty) {
+      return _buildEmptyState();
+    }
+    
+    // Convert cached data to Fault objects
+    final faults = cachedFaults.map((data) {
+      return Fault.fromMap(
+        data['id']?.toString() ?? '',
+        data,
+      );
+    }).toList();
+    
+    final filteredAlerts = _getFilteredAlerts(faults);
+    
+    if (filteredAlerts.isEmpty) {
+      return _buildEmptyState();
+    }
+    
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: filteredAlerts.length,
+      itemBuilder: (context, index) {
+        return _buildAlertCard(filteredAlerts[index]);
+      },
     );
   }
 

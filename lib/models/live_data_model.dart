@@ -17,14 +17,45 @@ class LiveData {
 
   factory LiveData.fromMap(Map<dynamic, dynamic> map) {
     return LiveData(
-      // These keys MUST match exactly what the ESP32 pushes to Firebase
+      // Match ESP32 Firebase keys - voltage works, power needs to check multiple possible keys
       voltage: (map['voltage'] as num?)?.toDouble() ?? 0.0,
-      totalPower: (map['power'] as num?)?.toDouble() ?? 0.0,
-      leakage: (map['current1'] as num?)?.toDouble() ?? 0.0,
+      // ESP32 sends 'powerHeavy' for heavy circuit power, calculate total from available power values
+      totalPower: _parseTotalPower(map),
+      // Leakage current - ESP32 sends current1 (living room), current2 (kitchen), current3 (neutral)
+      leakage: _parseLeakage(map),
       ambientTemp: (map['ambient_temp_c'] as num?)?.toDouble() ?? 24.5,
       timestamp: (map['timestamp'] as num?)?.toInt() ?? DateTime.now().millisecondsSinceEpoch,
-      lastUpdate: DateTime.now(), // Always records the exact moment data arrived
+      lastUpdate: DateTime.now(),
     );
+  }
+
+  /// Parse total power from various possible ESP32 key names
+  static double _parseTotalPower(Map<dynamic, dynamic> map) {
+    // Try different possible keys ESP32 might use
+    final powerHeavy = (map['powerHeavy'] as num?)?.toDouble() ?? 0.0;
+    final powerLight = (map['power_light'] as num?)?.toDouble() ?? 0.0;
+    final power = (map['power'] as num?)?.toDouble() ?? 0.0;
+    final totalPower = (map['totalPower'] as num?)?.toDouble() ?? 0.0;
+    
+    // If we have powerHeavy + power_light, use those
+    if (powerHeavy > 0 || powerLight > 0) {
+      return powerHeavy + powerLight;
+    }
+    // Otherwise fallback to power or totalPower
+    return power > 0 ? power : totalPower;
+  }
+
+  /// Parse leakage from current1 (live) and current3 (neutral) difference
+  static double _parseLeakage(Map<dynamic, dynamic> map) {
+    final current1 = (map['current1'] as num?)?.toDouble() ?? 0.0;
+    final current3 = (map['current3'] as num?)?.toDouble() ?? 0.0;
+    
+    // Calculate leakage in mA
+    if (current1 > 0 && current3 > 0) {
+      return ((current1 - current3).abs() * 1000);
+    }
+    // Fallback to direct leakage value if available
+    return (map['leakage_ma'] as num?)?.toDouble() ?? 0.0;
   }
 
   Map<String, dynamic> toMap() {

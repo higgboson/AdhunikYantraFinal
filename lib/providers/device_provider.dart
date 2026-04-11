@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:rxdart/rxdart.dart';
 import '../core/constants.dart';
 import '../core/firebase_paths.dart';
 import '../models/device_info_model.dart';
@@ -47,8 +48,18 @@ final leakageDataProvider = StreamProvider<LeakageData>((ref) {
         timestamp: DateTime.now(),
       ));
     },
-    loading: () => Stream.value(LeakageData()),
-    error: (_, __) => Stream.value(LeakageData()),
+   loading: () => Stream.value(LeakageData(
+  liveCurrentA: 0,
+  neutralCurrentA: 0,
+  leakageMa: 0,
+  timestamp: DateTime.now(),  // ✅ Add this
+)),
+error: (_, __) => Stream.value(LeakageData(
+  liveCurrentA: 0,
+  neutralCurrentA: 0,
+  leakageMa: 0,
+  timestamp: DateTime.now(),  // ✅ Add this
+)),
   );
 });
 
@@ -140,21 +151,45 @@ final ewmaConfigProvider = StreamProvider.family<EwmaConfig, String>((ref, circu
   });
 });
 
-// Neutral Monitor Provider
+// Neutral Monitor Provider - reads from neutral_monitor node OR calculates from readings
 final neutralDataProvider = StreamProvider<NeutralData>((ref) {
   const deviceId = AppConstants.deviceId;
-  final path = FirebasePaths.neutralMonitor(deviceId);
+  final neutralPath = FirebasePaths.neutralMonitor(deviceId);
+  final readingsPath = FirebasePaths.live(deviceId);
   
-  return FirebaseDatabase.instance
-      .ref(path)
-      .onValue
-      .map((event) {
-    if (event.snapshot.value != null) {
-      final data = Map<dynamic, dynamic>.from(event.snapshot.value as Map);
-      return NeutralData.fromMap(data);
-    }
-    return NeutralData();
-  });
+  // Combine both streams
+  final neutralStream = FirebaseDatabase.instance.ref(neutralPath).onValue;
+  final readingsStream = FirebaseDatabase.instance.ref(readingsPath).onValue;
+  
+  return Rx.combineLatest2<DatabaseEvent, DatabaseEvent, NeutralData>(
+    neutralStream,
+    readingsStream,
+    (neutralEvent, readingsEvent) {
+      // First try to get from neutral_monitor node
+      if (neutralEvent.snapshot.value != null) {
+        final data = Map<dynamic, dynamic>.from(neutralEvent.snapshot.value as Map);
+        return NeutralData.fromMap(data);
+      }
+      
+      // Fallback: calculate from readings node (current1 = live, current3 = neutral)
+      if (readingsEvent.snapshot.value != null) {
+        final readings = Map<String, dynamic>.from(readingsEvent.snapshot.value as Map);
+        final liveCurrent = (readings['current1'] as num?)?.toDouble() ?? 0.0;
+        final neutralCurrent = (readings['current3'] as num?)?.toDouble() ?? 0.0;
+        final differenceMa = ((liveCurrent - neutralCurrent).abs() * 1000);
+        
+        return NeutralData(
+          liveCurrentA: liveCurrent,
+          neutralCurrentA: neutralCurrent,
+          differenceMa: differenceMa,
+          faultActive: differenceMa > 30, // Auto-detect fault if > 30mA
+          lastUpdate: DateTime.now(),
+        );
+      }
+      
+      return NeutralData();
+    },
+  );
 });
 
 class EwmaNotifier extends StateNotifier<AsyncValue<void>> {

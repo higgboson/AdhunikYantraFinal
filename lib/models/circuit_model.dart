@@ -138,12 +138,18 @@ class Circuit {
   });
 
   factory Circuit.fromMap(String id, Map<dynamic, dynamic> map) {
+    // Parse power from various possible ESP32 keys
+    final power = _parsePower(id, map);
+    // Parse current from various possible ESP32 keys
+    final current = _parseCurrent(id, map);
+    
     return Circuit(
       id: id,
       name: map['name'] as String? ?? 'Circuit ${id.replaceAll('circuit_', '')}',
-      current: (map['current_a'] as num?)?.toDouble() ?? 0,
-      power: (map['power_w'] as num?)?.toDouble() ?? 0,
-      temp: (map['temp_c'] as num?)?.toDouble() ?? 0,
+      current: current,
+      power: power,
+      temp: (map['temperature'] as num?)?.toDouble() ?? 
+            (map['temp_c'] as num?)?.toDouble() ?? 0,
       relayState: map['relay_state'] as bool? ?? false,
       faultActive: map['fault_active'] as bool? ?? false,
       faultType: FaultTypeExtension.fromString(map['fault_type'] as String?),
@@ -151,6 +157,83 @@ class Circuit {
       ewmaTrained: map['ewma_trained'] as bool? ?? false,
       ewmaTrainingPct: (map['ewma_training_pct'] as num?)?.toInt() ?? 0,
     );
+  }
+
+  /// Parse power from various possible ESP32 key names based on circuit ID
+  static double _parsePower(String circuitId, Map<dynamic, dynamic> map) {
+    // Try direct power keys from readings node (power1, power2)
+    if (circuitId == 'circuit_1' || circuitId.contains('1')) {
+      final power1 = (map['power1'] as num?)?.toDouble() ?? 0.0;
+      if (power1 > 0) return power1;
+      
+      final power = (map['power'] as num?)?.toDouble() ?? 0.0;
+      if (power > 0) return power;
+      
+      // Calculate from current and voltage if available
+      final current1 = (map['current1'] as num?)?.toDouble() ?? 
+                      (map['current'] as num?)?.toDouble() ?? 0.0;
+      final voltage = (map['voltage'] as num?)?.toDouble() ?? 230.0;
+      if (current1 > 0) return voltage * current1;
+    } else if (circuitId == 'circuit_2' || circuitId.contains('2')) {
+      final power2 = (map['power2'] as num?)?.toDouble() ?? 0.0;
+      if (power2 > 0) return power2;
+      
+      final power = (map['power'] as num?)?.toDouble() ?? 0.0;
+      if (power > 0) return power;
+      
+      // Calculate from current and voltage if available
+      final current2 = (map['current2'] as num?)?.toDouble() ?? 
+                      (map['current'] as num?)?.toDouble() ?? 0.0;
+      final voltage = (map['voltage'] as num?)?.toDouble() ?? 230.0;
+      if (current2 > 0) return voltage * current2;
+    }
+    
+    // Legacy fallback keys
+    final powerHeavy = (map['powerHeavy'] as num?)?.toDouble() ?? 0.0;
+    if (powerHeavy > 0) return powerHeavy;
+    
+    final powerLight = (map['power_light'] as num?)?.toDouble() ?? 0.0;
+    if (powerLight > 0) return powerLight;
+    
+    final powerW = (map['power_w'] as num?)?.toDouble() ?? 0.0;
+    if (powerW > 0) return powerW;
+    
+    // Try reading from nested circuit data if available
+    if (map.containsKey(circuitId) && map[circuitId] is Map) {
+      final circuitData = Map<dynamic, dynamic>.from(map[circuitId] as Map);
+      return (circuitData['power'] as num?)?.toDouble() ?? 
+             (circuitData['power_w'] as num?)?.toDouble() ?? 0.0;
+    }
+    
+    return 0.0;
+  }
+
+  /// Parse current from various possible ESP32 key names based on circuit ID
+  static double _parseCurrent(String circuitId, Map<dynamic, dynamic> map) {
+    // Try direct current keys from readings node (current1, current2)
+    if (circuitId == 'circuit_1' || circuitId.contains('1')) {
+      final current1 = (map['current1'] as num?)?.toDouble() ?? 0.0;
+      if (current1 > 0) return current1;
+    } else if (circuitId == 'circuit_2' || circuitId.contains('2')) {
+      final current2 = (map['current2'] as num?)?.toDouble() ?? 0.0;
+      if (current2 > 0) return current2;
+    }
+    
+    // Fallback to generic keys
+    final current = (map['current'] as num?)?.toDouble() ?? 0.0;
+    if (current > 0) return current;
+    
+    final currentA = (map['current_a'] as num?)?.toDouble() ?? 0.0;
+    if (currentA > 0) return currentA;
+    
+    // Try reading from nested circuit data if available
+    if (map.containsKey(circuitId) && map[circuitId] is Map) {
+      final circuitData = Map<dynamic, dynamic>.from(map[circuitId] as Map);
+      return (circuitData['current'] as num?)?.toDouble() ?? 
+             (circuitData['current_a'] as num?)?.toDouble() ?? 0.0;
+    }
+    
+    return 0.0;
   }
 
   Map<String, dynamic> toMap() {

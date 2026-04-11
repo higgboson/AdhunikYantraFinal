@@ -2,13 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../core/theme.dart';
+import '../core/offline_cache.dart';
 import '../providers/auth_provider.dart';
+import '../providers/connectivity_provider.dart';
+import '../widgets/offline_banner.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isOffline = ref.watch(isOfflineProvider);
+    
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -23,6 +28,11 @@ class SettingsScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // Offline Status Card
+          _buildOfflineStatusCard(context, isOffline),
+          
+          const SizedBox(height: 24),
+          
           // Profile Section
           _buildSectionHeader('Profile'),
           _buildSettingTile(
@@ -99,6 +109,12 @@ class SettingsScreen extends ConsumerWidget {
             subtitle: 'Upload and analyze your DB schedule',
             onTap: () => context.push('/circuit-analyzer'),
           ),
+          _buildSettingTile(
+            icon: Icons.bug_report,
+            title: 'Developer Test Mode',
+            subtitle: 'Simulate faults for demo purposes',
+            onTap: () => context.push('/developer-test'),
+          ),
           
           const SizedBox(height: 24),
           
@@ -162,6 +178,135 @@ class SettingsScreen extends ConsumerWidget {
           ),
           
           const SizedBox(height: 100),
+        ],
+      ),
+    );
+  }
+
+  /// Build offline status card showing connection info and cache stats
+  Widget _buildOfflineStatusCard(BuildContext context, bool isOffline) {
+    final lastUpdate = OfflineCache.getLastUpdateTime();
+    final cacheSize = OfflineCache.getCacheSize();
+    final hasData = OfflineCache.hasCachedData();
+    
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isOffline 
+            ? AppColors.warning.withOpacity(0.1)
+            : AppColors.success.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isOffline 
+              ? AppColors.warning.withOpacity(0.3)
+              : AppColors.success.withOpacity(0.3),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              ConnectionStatusIndicator(
+                isOnline: !isOffline,
+                showLabel: false,
+              ),
+              const SizedBox(width: 12),
+              Text(
+                isOffline ? 'Offline Mode' : 'Online',
+                style: AppTypography.dmSans(
+                  size: 16,
+                  weight: FontWeight.w600,
+                  color: isOffline ? AppColors.warning : AppColors.success,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (hasData) ...[
+            _buildInfoRow('Last Sync', OfflineCache.getLastUpdatedString()),
+            _buildInfoRow('Cached Data', '${(cacheSize / 1024).toStringAsFixed(1)} KB'),
+          ] else
+            Text(
+              'No cached data available',
+              style: AppTypography.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: hasData ? () => _showClearCacheDialog(context) : null,
+              icon: const Icon(Icons.delete_outline, size: 18),
+              label: const Text('Clear Cached Data'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: hasData ? AppColors.danger : AppColors.textMuted,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: [
+          Text(
+            '$label: ',
+            style: AppTypography.bodySmall.copyWith(
+              color: AppColors.textSecondary,
+            ),
+          ),
+          Text(
+            value,
+            style: AppTypography.bodySmall.copyWith(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showClearCacheDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.cardBackground,
+        title: Text('Clear Cached Data?', style: AppTypography.heading3),
+        content: Text(
+          'This will remove all offline data including readings, power history, and fault records. You will need an internet connection to view data again.',
+          style: AppTypography.body,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel', style: AppTypography.body),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              await OfflineCache.clearCache();
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Cached data cleared', style: AppTypography.bodySmall),
+                  backgroundColor: AppColors.success,
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.danger,
+            ),
+            child: Text(
+              'Clear',
+              style: AppTypography.body.copyWith(color: AppColors.background),
+            ),
+          ),
         ],
       ),
     );

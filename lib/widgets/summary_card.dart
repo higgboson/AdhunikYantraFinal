@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import '../core/theme.dart';
 import '../models/live_data_model.dart';
+import 'offline_banner.dart';
 
 class SummaryCard extends StatelessWidget {
   final LiveData liveData;
+  final bool showCachedBadge;
 
   const SummaryCard({
     super.key,
     required this.liveData,
+    this.showCachedBadge = false,
   });
 
   @override
@@ -17,6 +20,15 @@ class SummaryCard extends StatelessWidget {
       decoration: AppDecorations.cardGlow,
       child: Column(
         children: [
+          // Cached badge when offline
+          if (showCachedBadge)
+            Align(
+              alignment: Alignment.topRight,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: CachedBadge(show: showCachedBadge),
+              ),
+            ),
           Row(
             children: [
               Expanded(

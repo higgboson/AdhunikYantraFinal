@@ -1,17 +1,30 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:go_router/go_router.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../core/theme.dart';
-import '../providers/device_provider.dart';
+import '../core/constants.dart';
 
-class NeutralMonitorScreen extends ConsumerWidget {
+class NeutralMonitorScreen extends StatefulWidget {
   const NeutralMonitorScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final neutralDataAsync = ref.watch(neutralDataProvider);
+  State<NeutralMonitorScreen> createState() => _NeutralMonitorScreenState();
+}
 
+class _NeutralMonitorScreenState extends State<NeutralMonitorScreen> {
+  // Firebase reference for live streaming
+  late final DatabaseReference _readingsRef;
+
+  @override
+  void initState() {
+    super.initState();
+    _readingsRef = FirebaseDatabase.instance
+        .ref('${AppConstants.deviceId}/readings');
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -27,134 +40,105 @@ class NeutralMonitorScreen extends ConsumerWidget {
         ),
         centerTitle: true,
       ),
-      body: neutralDataAsync.when(
-        data: (neutralData) => SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Current readings
-              _buildCurrentReadings(neutralData),
-              const SizedBox(height: 16),
-              
-              // Status card
-              _buildStatusCard(neutralData),
-              const SizedBox(height: 24),
-              
-              // Explanation
-              _buildExplanationCard(),
-              const SizedBox(height: 24),
-              
-              // Live graph
-              Text(
-                'Live Current Comparison',
-                style: AppTypography.heading3,
+      body: StreamBuilder<DatabaseEvent>(
+        stream: _readingsRef.onValue,
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return _buildError('Error: ${snapshot.error}');
+          }
+
+          if (!snapshot.hasData || snapshot.data?.snapshot.value == null) {
+            return const Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
               ),
-              const SizedBox(height: 16),
-              
-              Container(
-                height: 200,
-                padding: const EdgeInsets.all(16),
-                decoration: AppDecorations.card,
-                child: LineChart(
-                  _buildCurrentChart(),
+            );
+          }
+
+          // Parse readings from Firebase
+          final data = snapshot.data!.snapshot.value as Map<dynamic, dynamic>;
+          
+          // Read current values - use currentNeutral key
+          final current1 = (data['current1'] as num?)?.toDouble() ?? 0.0;
+          final currentNeutral = (data['currentNeutral'] as num?)?.toDouble() ?? 0.0;
+          
+          // Read leakage directly from Firebase (ESP32 calculates it)
+          // Fallback to local calculation if not available
+          double leakageMa;
+          if (data['leakage_mA'] != null) {
+            leakageMa = (data['leakage_mA'] as num).toDouble();
+          } else {
+            leakageMa = ((current1 - currentNeutral).abs() * 1000);
+          }
+
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Leakage Status Card at top
+                _buildLeakageStatusCard(leakageMa),
+                const SizedBox(height: 16),
+                
+                // Current readings
+                _buildCurrentReadings(current1, currentNeutral),
+                const SizedBox(height: 24),
+                
+                // Warning logic cards based on thresholds
+                _buildWarningCard(leakageMa),
+                const SizedBox(height: 24),
+                
+                // Live Current Comparison Bar Chart
+                Text(
+                  'Live Current Comparison',
+                  style: AppTypography.heading3,
                 ),
-              ),
-              
-              const SizedBox(height: 24),
-              
-              // Fault log
-              Text(
-                'Fault Log',
-                style: AppTypography.heading3,
-              ),
-              const SizedBox(height: 16),
-              
-              _buildFaultLog(),
-              
-              const SizedBox(height: 100),
-            ],
-          ),
-        ),
-        loading: () => const Center(
-          child: CircularProgressIndicator(
-            valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
-          ),
-        ),
-        error: (error, _) => _buildError(error.toString()),
+                const SizedBox(height: 16),
+                
+                Container(
+                  height: 250,
+                  padding: const EdgeInsets.all(16),
+                  decoration: AppDecorations.card,
+                  child: _buildCurrentComparisonBarChart(current1, currentNeutral),
+                ),
+                
+                const SizedBox(height: 24),
+                
+                // Explanation
+                _buildExplanationCard(),
+                
+                const SizedBox(height: 100),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
 
-  Widget _buildCurrentReadings(dynamic neutralData) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: AppDecorations.card,
-      child: Row(
-        children: [
-          Expanded(
-            child: _buildCurrentColumn(
-              'Live Current',
-              neutralData.liveCurrentA,
-              AppColors.secondary,
-              Icons.electric_bolt,
-            ),
-          ),
-          Container(
-            width: 1,
-            height: 80,
-            color: AppColors.border,
-          ),
-          Expanded(
-            child: _buildCurrentColumn(
-              'Neutral Current',
-              neutralData.neutralCurrentA,
-              AppColors.warning,
-              Icons.compare_arrows,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCurrentColumn(String label, double value, Color color, IconData icon) {
-    return Column(
-      children: [
-        Icon(icon, color: color, size: 24),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          style: AppTypography.bodySmall,
-        ),
-        const SizedBox(height: 8),
-        Text(
-          '${value.toStringAsFixed(2)} A',
-          style: AppTypography.shareTechMono(
-            size: 20,
-            weight: FontWeight.bold,
-            color: color,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStatusCard(dynamic neutralData) {
-    final isSafe = neutralData.isSafe;
-    final difference = neutralData.differenceMa;
+  Widget _buildLeakageStatusCard(double leakageMa) {
+    // Color coding: green <10mA, orange 10-25mA, red >25mA
+    Color statusColor;
+    String statusText;
+    
+    if (leakageMa < 10) {
+      statusColor = const Color(0xFF4CAF50); // Green
+      statusText = 'NORMAL';
+    } else if (leakageMa <= 25) {
+      statusColor = const Color(0xFFFF9800); // Orange
+      statusText = 'WARNING';
+    } else {
+      statusColor = const Color(0xFFF44336); // Red
+      statusText = 'CRITICAL';
+    }
     
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: isSafe 
-            ? AppColors.primary.withValues(alpha: 0.1) 
-            : AppColors.danger.withValues(alpha: 0.1),
+        color: statusColor.withOpacity(0.1),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isSafe 
-              ? AppColors.primary.withValues(alpha: 0.3) 
-              : AppColors.danger.withValues(alpha: 0.3),
+          color: statusColor.withOpacity(0.5),
           width: 2,
         ),
       ),
@@ -167,37 +151,235 @@ class NeutralMonitorScreen extends ConsumerWidget {
                 width: 16,
                 height: 16,
                 decoration: BoxDecoration(
-                  color: isSafe ? AppColors.primary : AppColors.danger,
+                  color: statusColor,
                   shape: BoxShape.circle,
                 ),
               ),
               const SizedBox(width: 12),
               Text(
-                isSafe ? 'HEALTHY' : 'BROKEN NEUTRAL DETECTED',
+                statusText,
                 style: AppTypography.orbitron(
                   size: 18,
                   weight: FontWeight.bold,
-                  color: isSafe ? AppColors.primary : AppColors.danger,
+                  color: statusColor,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 16),
           Text(
-            'Difference: ${difference.toStringAsFixed(1)} mA',
+            '${leakageMa.toStringAsFixed(2)} mA',
             style: AppTypography.shareTechMono(
-              size: 24,
+              size: 36,
               weight: FontWeight.bold,
-              color: isSafe ? AppColors.primary : AppColors.danger,
+              color: statusColor,
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            'Threshold: 30 mA',
+            'Earth Leakage Current',
             style: AppTypography.bodySmall,
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildWarningCard(double leakageMa) {
+    // Warning logic based on thresholds
+    if (leakageMa > 25) {
+      // RED card: Critical
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF44336).withOpacity(0.15),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: const Color(0xFFF44336),
+            width: 2,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.warning_amber,
+              color: const Color(0xFFF44336),
+              size: 32,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'CRITICAL: Earth leakage detected',
+                    style: AppTypography.dmSans(
+                      weight: FontWeight.bold,
+                      size: 16,
+                      color: const Color(0xFFF44336),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Trip relay immediately. Leakage exceeds safe threshold (>25mA).',
+                    style: AppTypography.bodySmall.copyWith(
+                      color: const Color(0xFFF44336),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    } else if (leakageMa > 10) {
+      // ORANGE card: Warning
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFF9800).withOpacity(0.15),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: const Color(0xFFFF9800),
+            width: 2,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.warning,
+              color: const Color(0xFFFF9800),
+              size: 32,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'WARNING: Leakage current above safe threshold',
+                    style: AppTypography.dmSans(
+                      weight: FontWeight.bold,
+                      size: 16,
+                      color: const Color(0xFFFF9800),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Leakage is between 10-25mA. Monitor closely.',
+                    style: AppTypography.bodySmall.copyWith(
+                      color: const Color(0xFFFF9800),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    } else if (leakageMa < 1.5) {
+      // GREEN card: Normal
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF4CAF50).withOpacity(0.15),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: const Color(0xFF4CAF50),
+            width: 2,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.check_circle,
+              color: const Color(0xFF4CAF50),
+              size: 32,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Normal — no leakage detected',
+                    style: AppTypography.dmSans(
+                      weight: FontWeight.bold,
+                      size: 16,
+                      color: const Color(0xFF4CAF50),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Leakage is below 1.5mA. System is safe.',
+                    style: AppTypography.bodySmall.copyWith(
+                      color: const Color(0xFF4CAF50),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    
+    // No card for intermediate values (1.5mA - 10mA)
+    return const SizedBox.shrink();
+  }
+
+  Widget _buildCurrentReadings(double current1, double currentNeutral) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: AppDecorations.card,
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildCurrentColumn(
+              'Live Wire (L)',
+              current1,
+              const Color(0xFF2196F3), // Blue
+              Icons.electric_bolt,
+            ),
+          ),
+          Container(
+            width: 1,
+            height: 80,
+            color: AppColors.border,
+          ),
+          Expanded(
+            child: _buildCurrentColumn(
+              'Neutral Wire (N)',
+              currentNeutral,
+              const Color(0xFFFF9800), // Orange
+              Icons.compare_arrows,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCurrentColumn(String label, double value, Color color, IconData icon) {
+    return Column(
+      children: [
+        Icon(icon, color: color, size: 28),
+        const SizedBox(height: 8),
+        Text(
+          label,
+          style: AppTypography.bodySmall,
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '${value.toStringAsFixed(2)} A',
+          style: AppTypography.shareTechMono(
+            size: 22,
+            weight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+      ],
     );
   }
 
@@ -224,107 +406,125 @@ class NeutralMonitorScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            'In a healthy electrical system, the current in the live wire should equal the current in the neutral wire. If these differ significantly, it indicates current leakage to earth, which can be a shock hazard or fire risk.',
+            'In a healthy electrical system, the current in the live wire should equal the current in the neutral wire. If these differ significantly, it indicates current leakage to earth (earth leakage), which can be a shock hazard or fire risk.',
             style: AppTypography.bodySmall,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Thresholds:\n• < 1.5mA: Normal, no action needed\n• 10-25mA: Warning, monitor closely\n• > 25mA: Critical, trip relay immediately',
+            style: AppTypography.bodySmall.copyWith(
+              color: AppColors.textSecondary,
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildFaultLog() {
-    // Mock fault log data
-    final faults = [
-      {
-        'time': '2 days ago',
-        'difference': '45.2 mA',
-        'status': 'Resolved',
-      },
-      {
-        'time': '5 days ago',
-        'difference': '38.7 mA',
-        'status': 'Resolved',
-      },
-    ];
+  Widget _buildCurrentComparisonBarChart(double current1, double currentNeutral) {
+    // Find max value for scaling
+    final maxValue = [current1, currentNeutral, 0.1].reduce((a, b) => a > b ? a : b);
+    final maxY = (maxValue * 1.2).ceilToDouble(); // Add 20% headroom
     
-    if (faults.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(24),
-        decoration: AppDecorations.card,
-        child: Center(
-          child: Column(
-            children: [
-              Icon(
-                Icons.check_circle,
-                size: 48,
-                color: AppColors.primary.withValues(alpha: 0.5),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'No neutral faults recorded',
-                style: AppTypography.body.copyWith(
-                  color: AppColors.textSecondary,
-                ),
-              ),
-            ],
-          ),
+    return BarChart(
+      BarChartData(
+        alignment: BarChartAlignment.spaceAround,
+        maxY: maxY > 0 ? maxY : 1,
+        minY: 0,
+        gridData: FlGridData(
+          show: true,
+          drawVerticalLine: false,
+          getDrawingHorizontalLine: (value) {
+            return FlLine(
+              color: AppColors.border,
+              strokeWidth: 1,
+            );
+          },
         ),
-      );
-    }
-    
-    return Column(
-      children: faults.map((fault) {
-        return Container(
-          margin: const EdgeInsets.only(bottom: 8),
-          padding: const EdgeInsets.all(16),
-          decoration: AppDecorations.card,
-          child: Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: AppColors.danger.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(
-                  Icons.warning,
-                  color: AppColors.danger,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Imbalance: ${fault['difference']}',
-                      style: AppTypography.dmSans(weight: FontWeight.w600),
-                    ),
-                    Text(
-                      fault['time']!,
+        titlesData: FlTitlesData(
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 50,
+              getTitlesWidget: (value, meta) {
+                return Text(
+                  '${value.toStringAsFixed(1)}A',
+                  style: AppTypography.caption,
+                );
+              },
+            ),
+          ),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              getTitlesWidget: (value, meta) {
+                final labels = ['Live (L)', 'Neutral (N)'];
+                if (value.toInt() >= 0 && value.toInt() < labels.length) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      labels[value.toInt()],
                       style: AppTypography.bodySmall,
                     ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  fault['status']!,
-                  style: AppTypography.caption.copyWith(
-                    color: AppColors.primary,
-                  ),
+                  );
+                }
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ),
+        borderData: FlBorderData(show: false),
+        barGroups: [
+          // Live wire bar (Blue)
+          BarChartGroupData(
+            x: 0,
+            barRods: [
+              BarChartRodData(
+                toY: current1,
+                color: const Color(0xFF2196F3),
+                width: 40,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(4),
                 ),
               ),
             ],
           ),
-        );
-      }).toList(),
+          // Neutral wire bar (Orange)
+          BarChartGroupData(
+            x: 1,
+            barRods: [
+              BarChartRodData(
+                toY: currentNeutral,
+                color: const Color(0xFFFF9800),
+                width: 40,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(4),
+                ),
+              ),
+            ],
+          ),
+        ],
+        barTouchData: BarTouchData(
+          enabled: true,
+          touchTooltipData: BarTouchTooltipData(
+            tooltipBgColor: AppColors.cardBackground,
+            getTooltipItem: (group, groupIndex, rod, rodIndex) {
+              final labels = ['Live Wire', 'Neutral Wire'];
+              return BarTooltipItem(
+                '${labels[groupIndex]}\n${rod.toY.toStringAsFixed(3)} A',
+                AppTypography.body.copyWith(
+                  color: groupIndex == 0 
+                      ? const Color(0xFF2196F3) 
+                      : const Color(0xFFFF9800),
+                  fontWeight: FontWeight.bold,
+                ),
+              );
+            },
+          ),
+        ),
+      ),
     );
   }
 
@@ -352,73 +552,6 @@ class NeutralMonitorScreen extends ConsumerWidget {
           ),
         ],
       ),
-    );
-  }
-
-  LineChartData _buildCurrentChart() {
-    return LineChartData(
-      gridData: FlGridData(
-        show: true,
-        drawVerticalLine: false,
-        getDrawingHorizontalLine: (value) {
-          return const FlLine(
-            color: AppColors.border,
-            strokeWidth: 1,
-          );
-        },
-      ),
-      titlesData: FlTitlesData(
-        leftTitles: AxisTitles(
-          sideTitles: SideTitles(
-            showTitles: true,
-            reservedSize: 40,
-            getTitlesWidget: (value, meta) {
-              return Text(
-                '${value.toInt()}A',
-                style: AppTypography.caption,
-              );
-            },
-          ),
-        ),
-        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        bottomTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-      ),
-      borderData: FlBorderData(show: false),
-      lineBarsData: [
-        // Live current line
-        LineChartBarData(
-          spots: const [
-            FlSpot(0, 2.5),
-            FlSpot(1, 2.8),
-            FlSpot(2, 2.6),
-            FlSpot(3, 3.0),
-            FlSpot(4, 2.7),
-            FlSpot(5, 2.9),
-            FlSpot(6, 2.8),
-          ],
-          isCurved: true,
-          color: AppColors.secondary,
-          barWidth: 3,
-          dotData: const FlDotData(show: false),
-        ),
-        // Neutral current line
-        LineChartBarData(
-          spots: const [
-            FlSpot(0, 2.4),
-            FlSpot(1, 2.7),
-            FlSpot(2, 2.5),
-            FlSpot(3, 2.9),
-            FlSpot(4, 2.6),
-            FlSpot(5, 2.8),
-            FlSpot(6, 2.7),
-          ],
-          isCurved: true,
-          color: AppColors.warning,
-          barWidth: 3,
-          dotData: const FlDotData(show: false),
-        ),
-      ],
     );
   }
 }

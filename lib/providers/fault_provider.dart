@@ -3,6 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/constants.dart';
 import '../core/firebase_paths.dart';
+import '../core/offline_cache.dart';
 import '../models/fault_model.dart';
 
 final activeFaultsProvider = StreamProvider<List<Fault>>((ref) {
@@ -12,22 +13,32 @@ final activeFaultsProvider = StreamProvider<List<Fault>>((ref) {
   return FirebaseDatabase.instance
       .ref(path)
       .onValue
-      .map((event) {
+      .handleError((error) {
+    print('Firebase faults stream error: $error');
+  })
+      .asyncMap((event) async {
     final faults = <Fault>[];
     
     if (event.snapshot.value != null) {
       final data = Map<dynamic, dynamic>.from(event.snapshot.value as Map);
       
-      data.forEach((key, value) {
+      for (var entry in data.entries) {
+        final key = entry.key;
+        final value = entry.value;
+        
         if (value != null && value is Map) {
           final faultMap = Map<dynamic, dynamic>.from(value);
           final resolved = faultMap['resolved'] as bool? ?? false;
           
           if (!resolved) {
-            faults.add(Fault.fromMap(key.toString(), faultMap));
+            final fault = Fault.fromMap(key.toString(), faultMap);
+            faults.add(fault);
+            
+            // Save fault to cache (fire and forget)
+            OfflineCache.saveFault(fault.toMap()..['id'] = key.toString());
           }
         }
-      });
+      }
     }
     
     // Sort by timestamp descending (most recent first)
@@ -43,18 +54,28 @@ final allFaultsProvider = StreamProvider<List<Fault>>((ref) {
   return FirebaseDatabase.instance
       .ref(path)
       .onValue
-      .map((event) {
+      .handleError((error) {
+    print('Firebase faults stream error: $error');
+  })
+      .asyncMap((event) async {
     final faults = <Fault>[];
     
     if (event.snapshot.value != null) {
       final data = Map<dynamic, dynamic>.from(event.snapshot.value as Map);
       
-      data.forEach((key, value) {
+      for (var entry in data.entries) {
+        final key = entry.key;
+        final value = entry.value;
+        
         if (value != null && value is Map) {
           final faultMap = Map<dynamic, dynamic>.from(value);
-          faults.add(Fault.fromMap(key.toString(), faultMap));
+          final fault = Fault.fromMap(key.toString(), faultMap);
+          faults.add(fault);
+          
+          // Save fault to cache (fire and forget)
+          OfflineCache.saveFault(fault.toMap()..['id'] = key.toString());
         }
-      });
+      }
     }
     
     faults.sort((a, b) => b.timestamp.compareTo(a.timestamp));
@@ -69,13 +90,26 @@ final faultByIdProvider = StreamProvider.family<Fault?, String>((ref, faultId) {
   return FirebaseDatabase.instance
       .ref(path)
       .onValue
-      .map((event) {
+      .handleError((error) {
+    print('Firebase fault stream error: $error');
+  })
+      .asyncMap((event) async {
     if (event.snapshot.value != null) {
       final data = Map<dynamic, dynamic>.from(event.snapshot.value as Map);
-      return Fault.fromMap(faultId, data);
+      final fault = Fault.fromMap(faultId, data);
+      
+      // Save to cache (fire and forget)
+      OfflineCache.saveFault(fault.toMap()..['id'] = faultId);
+      
+      return fault;
     }
     return null;
   });
+});
+
+/// Provider for cached fault history (for offline use)
+final offlineFaultsProvider = Provider<List<Map<String, dynamic>>>((ref) {
+  return OfflineCache.getFaultHistory();
 });
 
 class FaultNotifier extends StateNotifier<AsyncValue<void>> {
