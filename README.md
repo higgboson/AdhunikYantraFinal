@@ -9,7 +9,7 @@
 </p>
 
 > 🏆 **HACKSAGON 2025 Finalist** — ABV-IIITM Gwalior  
-> Built by **Ayush Joshi Thayyil**, **Aryan Patel**, and **Rishav Kumar**
+> Built by **Ayush Joshi Thayyil**, **Aryan Patel**, **Anshuman Upadhyay** and **Rishav Kumar**
 
 ---
 
