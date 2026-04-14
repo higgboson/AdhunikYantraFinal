@@ -31,7 +31,7 @@ import 'package:path_provider/path_provider.dart';
 
 // ── Groq API for TEXT-ONLY responses (fault explanation, safety check)
 // Image analysis is done by on-device OCR — no API needed for that
-const String _groqApiKey = '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';
+const String _groqApiKey = 'YOUR_GROQ_API_KEY_HERE';
 const String _groqUrl    = 'https://api.groq.com/openai/v1/chat/completions';
 const String _groqModel  = 'llama-3.1-8b-instant'; // text only, 14.4K/day free
 
