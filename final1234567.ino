@@ -19,9 +19,9 @@
 
 // ── WIFI & FIREBASE ──────────────────────────────────────────
 #define WIFI_SSID      "Galaxy A35 5G A3C4"
-#define WIFI_PASSWORD  "Mudra123@#"
-#define API_KEY        "AIzaSyB96JUzEQbI2vcacSsmxQN_CcoKie95Jac"
-#define DATABASE_URL   "adhunikyantra-e2dee-default-rtdb.firebaseio.com"
+#define WIFI_PASSWORD  " "
+#define API_KEY        "  "
+#define DATABASE_URL   "   "
 #define DEVICE_ID      "device_001"
 #define CACHE_FILE "/readings_cache.json"
 #define MAX_CACHE_READINGS 50
