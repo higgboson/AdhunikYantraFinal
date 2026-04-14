@@ -8,7 +8,7 @@
   <img src="https://img.shields.io/badge/Hackathon-HACKSAGON%202025%20Finalist-gold?style=for-the-badge" />
 </p>
 
-> 🏆 **HACKSAGON 2025 Finalist** — ABV-IIITM Gwalior  
+> 🏆 **HACKSAGON 2025-26 Finalist** — ABV-IIITM Gwalior  
 > Built by **Ayush Joshi Thayyil**, **Aryan Patel**, **Anshuman Upadhyay** and **Rishav Kumar**
 
 ---
@@ -38,7 +38,7 @@
 
 ## 🌟 Overview
 
-**Adhunik Yantra** (Hindi: *Modern Machine*) is an end-to-end smart electrical distribution board monitoring system designed to bring intelligence to the most neglected part of every home — the fuse box.
+**Adhunik Yantra** is an end-to-end smart electrical distribution board monitoring system designed to bring intelligence to the most neglected part of every home — the fuse box.
 
 Most homes have no visibility into what's happening inside their distribution board. Adhunik Yantra changes that by combining real-time sensor monitoring, AI-powered circuit analysis, intelligent fault detection, energy coaching, and predictive motor health monitoring — all in a single system built from hardware up.
 
@@ -72,7 +72,7 @@ The system consists of three layers:
 | 📊 Energy Coach (EWMA) | Detects abnormal energy patterns, prevents wastage |
 | ⚙️ Motor Health Monitoring | Tracks current signatures to predict device failure |
 | 📲 SMS Alerts | Twilio SMS sent on every fault detection |
-| 🔔 Push Notifications | IFTTT webhooks for real-time mobile alerts |
+| 🔔 Push Notifications | Twilio for real-time mobile alerts |
 | 🧪 Test Mode | Remote fault simulation via Firebase for demo/testing |
 
 ---
@@ -608,7 +608,7 @@ adhunik-yantra/
 | **Routing** | go_router |
 | **Charts** | fl_chart |
 | **Cloud Database** | Firebase Realtime Database |
-| **Push Notifications** | Firebase Cloud Messaging + IFTTT |
+| **Push Notifications** | Firebase Cloud Messaging + Twilio |
 | **On-device OCR** | Google ML Kit Text Recognition |
 | **AI Inference** | Groq API (LLaMA 3) |
 | **SMS Alerts** | Twilio REST API |
@@ -625,7 +625,7 @@ adhunik-yantra/
 | **Rishav Kumar** 
 | **Anshuman Upadhyay**
 
-Built at **ABV-IIITM Gwalior** for **HACKSAGON 2025**.
+
 
 ---
 
