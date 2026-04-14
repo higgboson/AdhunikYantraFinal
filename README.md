@@ -1,4 +1,4 @@
-# ⚡ Adhunik Yantra — Smart Distribution Board Monitoring and automated fualt detection system
+# ⚡ Adhunik Yantra — Smart Distribution Board Monitoring and automated fault detection system
 
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-ESP32-blue?style=for-the-badge&logo=espressif" />
