@@ -152,26 +152,7 @@ ESP32 GPIO 32         ──► Buzzer
 
 The firmware reads AC signals using RMS (Root Mean Square) calculation over a 20ms window (one full 50Hz cycle). This gives accurate true RMS values even for non-sinusoidal loads.
 
-```cpp
-float getChannelRMS(uint8_t channel, adsGain_t gain) {
-  ads.setGain(gain);
-  // Auto DC offset removal (50 samples average)
-  long offsetSum = 0;
-  for (int i = 0; i < 50; i++)
-    offsetSum += ads.readADC_SingleEnded(channel);
-  float offset = offsetSum / 50.0f;
 
-  // RMS over one full AC cycle (20ms at 50Hz)
-  double sumSq = 0;
-  int n = 0;
-  unsigned long t0 = micros();
-  while (micros() - t0 < 20000) {
-    float s = ads.readADC_SingleEnded(channel) - offset;
-    sumSq += (double)(s * s);
-    n++;
-  }
-  return (n > 0) ? sqrtf(sumSq / n) : 0.0f;
-}
 ```
 
 The auto DC offset removal ensures accurate readings regardless of sensor bias drift — no manual calibration needed after initial setup.
@@ -496,76 +477,6 @@ A **10-second debounce** prevents SMS spam if the fault condition fluctuates. Th
 
 ---
 
-## 🛠 Getting Started
-
-### Prerequisites
-
-- Arduino IDE 2.x or PlatformIO
-- ESP32 board package installed
-- Flutter SDK 3.x
-- Firebase project with Realtime Database enabled
-- Node.js (for build tooling)
-
-### ESP32 Setup
-
-1. Clone the repository
-2. Open `firmware/adhunik_yantra.ino` in Arduino IDE
-3. Install required libraries via Library Manager:
-   - `Adafruit ADS1X15`
-   - `TFT_eSPI`
-   - `Firebase ESP Client`
-4. Update credentials in the firmware:
-```cpp
-#define WIFI_SSID      "your_wifi_ssid"
-#define WIFI_PASSWORD  "your_wifi_password"
-#define API_KEY        "your_firebase_api_key"
-#define DATABASE_URL   "your-rtdb.firebaseio.com"
-```
-5. Configure `TFT_eSPI` for your specific TFT display in `User_Setup.h`
-6. Flash to ESP32
-
-### Flutter App Setup
-
-```bash
-git clone https://github.com/your-username/adhunik-yantra.git
-cd adhunik-yantra/adhunikyantra
-
-# Install dependencies
-flutter pub get
-
-# Add your google-services.json to android/app/
-# (Download from Firebase Console → Project Settings → Android App)
-
-# Build APK
-flutter build apk --release
-# APK at: build/app/outputs/flutter-apk/app-release.apk
-
-# Or run directly on connected device
-flutter run
-```
-
-### Android Build Config (`android/app/build.gradle.kts`)
-
-```kotlin
-android {
-    compileSdk = 36
-
-    defaultConfig {
-        minSdk = 21
-        targetSdk = 35
-    }
-
-    buildTypes {
-        release {
-            signingConfig = signingConfigs.getByName("debug")
-            isMinifyEnabled = false
-        }
-    }
-}
-```
-
----
-
 ## 📁 Project Structure
 
 ```
@@ -619,7 +530,7 @@ adhunik-yantra/
 ## 👥 Team
 
 | Name 
-|---|---|
+|---|
 | **Ayush Joshi Thayyil** 
 | **Aryan Patel** 
 | **Rishav Kumar** 
